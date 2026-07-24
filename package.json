@@ -12,7 +12,10 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "db:check": "tsx scripts/db-check.ts"
+    "db:check": "tsx scripts/db-check.ts",
+    "test": "node --import tsx --test etl/lib/*.test.ts",
+    "etl:usda": "tsx etl/usda/index.ts",
+    "etl:cfct": "tsx etl/cfct/index.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -38,12 +41,16 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/yauzl": "^3.4.0",
+    "csv-parse": "^7.0.1",
     "eslint": "^9",
     "eslint-config-next": "^16.2.11",
+    "mysql2": "^3.23.1",
     "prisma": "^7.9.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "yauzl": "^3.4.0"
   },
   "allowScripts": {
     "@prisma/engines@7.9.0": true,
