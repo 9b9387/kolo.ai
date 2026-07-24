@@ -32,6 +32,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# prisma generated client (regenerated via postinstall)
+/src/generated/prisma
+
+# etl download cache
+/etl/.cache
 
 # vercel
 .vercel
