@@ -1,6 +1,7 @@
 'use server';
 
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth/better-auth';
 import { prisma } from '@/lib/db';
@@ -11,7 +12,7 @@ const EXPIRY_DAYS = { '30': 30, '90': 90, '365': 365, never: null } as const;
 
 async function requireUserId(): Promise<string> {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) throw new Error('Not authenticated');
+  if (!session) redirect('/sign-in?redirect=/tokens');
   return session.user.id;
 }
 
@@ -31,7 +32,8 @@ export async function createPatAction(
     return { status: 'error', message: 'Name is required (max 100 characters).' };
   }
   const expiry = String(formData.get('expiry') ?? '90');
-  if (!(expiry in EXPIRY_DAYS)) {
+  // Object.hasOwn, not `in`: prototype names (constructor, …) must not pass.
+  if (!Object.hasOwn(EXPIRY_DAYS, expiry)) {
     return { status: 'error', message: 'Invalid expiry.' };
   }
   const days = EXPIRY_DAYS[expiry as keyof typeof EXPIRY_DAYS];

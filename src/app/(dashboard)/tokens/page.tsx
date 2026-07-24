@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { PAT_PREFIX } from '@/lib/auth/pat';
 import { revokePatAction } from './actions';
 import { CreateTokenDialog } from './create-token-dialog';
+import { LocalDate } from './local-date';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,10 +31,6 @@ const STATUS_VARIANT = {
   expired: 'secondary',
   revoked: 'outline',
 } as const;
-
-function formatDate(value: Date | null): string {
-  return value ? value.toISOString().slice(0, 10) : '—';
-}
 
 export default async function TokensPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -83,9 +80,15 @@ export default async function TokensPage() {
                   <TableCell className="font-mono text-xs">
                     {PAT_PREFIX}…{token.lastFour}
                   </TableCell>
-                  <TableCell>{formatDate(token.createdAt)}</TableCell>
-                  <TableCell>{formatDate(token.expiresAt)}</TableCell>
-                  <TableCell>{formatDate(token.lastUsedAt)}</TableCell>
+                  <TableCell>
+                    <LocalDate value={token.createdAt} />
+                  </TableCell>
+                  <TableCell>
+                    <LocalDate value={token.expiresAt} />
+                  </TableCell>
+                  <TableCell>
+                    <LocalDate value={token.lastUsedAt} />
+                  </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_VARIANT[status]}>{status}</Badge>
                   </TableCell>
