@@ -1,6 +1,7 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["fullTextIndex"]
 }
 
 datasource db {
@@ -183,13 +184,17 @@ model Goal {
   waterTargetMl      Int?
   rationale          String?  @db.Text
 
-  // App layer keeps at most one active goal per user.
+  // At most one active goal per user, enforced by the DB: activeKey mirrors
+  // userId while active and is NULL once archived (MySQL unique indexes
+  // ignore NULLs). Maintained in the same transaction that flips isActive.
   isActive  Boolean   @default(true)
+  activeKey String?   @db.VarChar(191)
   startedAt DateTime  @default(now())
   endedAt   DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  @@unique([activeKey])
   @@index([userId, isActive])
   @@map("goal")
 }
@@ -278,6 +283,7 @@ model BodyMetric {
   value        Decimal      @db.Decimal(7, 2)
   measuredAt   DateTime
   measuredDate DateTime     @db.Date
+  timezone     String       @db.VarChar(40) // IANA zone measuredDate was derived with
   source       MetricSource @default(agent)
   note         String?      @db.VarChar(255)
   createdAt    DateTime     @default(now())
@@ -344,7 +350,9 @@ model Food {
   ediblePct Decimal? @db.Decimal(5, 1)
 
   // name+nameZh+nameEn+aliases+brand, one shared builder for ETL and
-  // create_food. FULLTEXT ngram index added in a hand-written migration.
+  // create_food. Modeled as @@fulltext below so migrate diff keeps it; the
+  // WITH PARSER ngram part is invisible to Prisma and owned by the
+  // hand-written migration.
   searchText String? @db.Text
 
   completeness    Decimal?   @db.Decimal(3, 2)
@@ -367,6 +375,7 @@ model Food {
   @@index([name(length: 191)])
   @@index([createdByUserId])
   @@index([status, sourceId])
+  @@fulltext([searchText], map: "ft_food_search")
   @@map("food")
 }
 
@@ -440,8 +449,11 @@ model FoodPortion {
 // E. Diet log — dual form, immutable nutrient snapshot.
 //    Form A: foodId set (library reference).
 //    Form B: foodId NULL + description (agent-reported).
-//    A CHECK constraint (hand-written migration) enforces
-//    foodId IS NOT NULL OR description IS NOT NULL.
+//    Invariant foodId IS NOT NULL OR description IS NOT NULL is enforced in
+//    the app layer only — MySQL forbids CHECK on columns with a SET NULL
+//    referential action. Foods are never hard-deleted (status='retired'),
+//    so the SET NULL action never fires; form-A writes also snapshot the
+//    food name into description as a safety net.
 // =====================================================
 
 enum MealType {
@@ -494,6 +506,7 @@ model DietLog {
   source              LogSource
   confidence          Decimal?  @db.Decimal(3, 2)
   originalDescription String?   @db.Text
+  note                String?   @db.VarChar(500) // free-form note on the entry
   createdBy           String?   @db.VarChar(120) // MCP client / model identifier
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
