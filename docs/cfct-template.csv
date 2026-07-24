@@ -1,0 +1,3 @@
+﻿food_code,food_name,food_name_en,category,edible_pct,water_g,energy_kcal,energy_kj,protein_g,fat_g,carbohydrate_g,fiber_g,cholesterol_mg,ash_g,vit_a_ug_rae,carotene_ug,retinol_ug,thiamin_mg,riboflavin_mg,niacin_mg,vit_c_mg,vit_e_mg,ca_mg,p_mg,k_mg,na_mg,mg_mg,fe_mg,zn_mg,se_ug,cu_mg,mn_mg,remark
+000001,示例食物A（导入前请删除本行）,Example Food A,示例-类别,100,80.0,100,418,5.0,2.0,12.0,1.0,10,0.5,10,20,5,0.05,0.05,1.0,5,0.5,50,60,150,60.0,20,1.0,0.50,5.00,0.10,0.20,示例行：演示常规写法
+000002,示例食物B（导入前请删除本行）,,示例-类别,85,90.0,,167,1.0,0,8.5,Tr,—,0.3,—,Tr,—,0.02,0.03,0.3,15,—,20,15,120,5.0,10,0.4,0.20,1.00,0.05,Tr,示例行：演示 Tr 与 — 的写法（只填 energy_kj 时 kcal 自动换算）
