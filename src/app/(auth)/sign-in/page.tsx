@@ -36,7 +36,14 @@ function SignInForm() {
       setError(error.message ?? 'Sign-in failed.');
       return;
     }
-    router.push(searchParams.get('redirect') ?? '/tokens');
+    // Only same-site paths: a raw value here would be an open redirect
+    // (absolute, protocol-relative // and /\ forms all escape the origin).
+    const redirect = searchParams.get('redirect');
+    const target =
+      redirect && redirect.startsWith('/') && !redirect.startsWith('//') && !redirect.startsWith('/\\')
+        ? redirect
+        : '/tokens';
+    router.push(target);
     router.refresh();
   }
 
