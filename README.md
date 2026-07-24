@@ -41,6 +41,26 @@ claude mcp add --transport http kolo http://localhost:3000/api/mcp \
   --header "Authorization: Bearer <your token>"
 ```
 
+## Importing food data
+
+```bash
+npm run etl:usda                 # USDA FDC: SR Legacy + Foundation + FNDDS (~13.7k foods)
+npm run etl:cfct -- --file my-cfct.csv --label "标准版第6版"
+```
+
+- USDA downloads the official CSV packages into `etl/.cache/` (release
+  URLs live in `etl/usda/config.ts`; FDC publishes updates in April and
+  October — re-run after bumping the version there).
+- 中国食物成分表 has no public dataset: fill `docs/cfct-template.csv` with
+  your own legally obtained data (rules in `docs/cfct-template.md`), then
+  import it. `etl/cfct/from-sanotsu.ts` can convert the community OCR repo
+  for strictly local use — spot-check against the book and never
+  redistribute the output.
+- Open Food Facts is queried live per barcode (rate-limited, cached 30
+  days as `dataType='off_api'`) — no bulk import in phase 1.
+- Imports are idempotent (`(sourceId, sourceKey)` + content hash): re-runs
+  skip unchanged rows, full runs retire rows the source dropped.
+
 ## Data sources & licensing
 
 See `NOTICE.md` (added with the ETL milestone) for attribution. Sources are
