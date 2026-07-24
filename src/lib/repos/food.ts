@@ -6,6 +6,14 @@ import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
 import { buildSearchText } from '@/lib/search-text';
+// ETL-shared pure modules (relative paths — etl/ is outside the @/ alias).
+import type { NormalizedFood } from '../../../etl/lib/batch';
+import { contentHash } from '../../../etl/lib/hash';
+import {
+  COMPLETENESS_COLUMNS,
+  NUTRIENT_COLUMNS,
+  type NutrientColumn,
+} from '../../../etl/lib/nutrients';
 
 export interface FoodSearchRow {
   id: bigint;
@@ -175,6 +183,111 @@ async function searchFoodsFulltext(
     hasPortions: Boolean(r.hasPortions),
   }));
   return { rows, hasMore };
+}
+
+const OFF_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * A cached OFF row for this barcode fresher than 30 days, or null. Used by
+ * search_foods to confirm a barcode miss before calling the OFF API — a fresh
+ * row means the earlier local miss was final (e.g. filtered out), a stale or
+ * absent one triggers the live fetch. No status filter: a recently retired
+ * row still counts as "we already know this barcode".
+ */
+export async function findOffCachedFresh(barcode: string) {
+  const source = await prisma.dataSource.findUnique({ where: { code: 'off' } });
+  if (!source) return null;
+  return prisma.food.findFirst({
+    where: {
+      sourceId: source.id,
+      sourceKey: barcode,
+      updatedAt: { gt: new Date(Date.now() - OFF_CACHE_TTL_MS) },
+    },
+    select: { id: true, updatedAt: true },
+  });
+}
+
+/**
+ * Upsert one OFF-API-normalized food into the library (runtime single-row
+ * write — Prisma is fine here, unlike the bulk ETL path). Same shape the ETL
+ * would produce: searchText via the shared builder, completeness as the
+ * non-NULL share of the 12 core nutrients, contentHash over the normalized
+ * payload so a future bulk OFF import can skip the row when unchanged.
+ */
+export async function cacheOffFood(normalized: NormalizedFood) {
+  const source = await prisma.dataSource.findUnique({ where: { code: 'off' } });
+  if (!source) {
+    // Seed data missing — surfaces as INTERNAL at the MCP boundary.
+    throw new Error('data_source "off" is not seeded');
+  }
+
+  let present = 0;
+  const nutrientData: Partial<Record<NutrientColumn, number | null>> = {};
+  for (const column of NUTRIENT_COLUMNS) {
+    const value = normalized.nutrients[column];
+    const clean = value !== undefined && value !== null && Number.isFinite(value) ? value : null;
+    nutrientData[column] = clean;
+    if (clean !== null && COMPLETENESS_COLUMNS.includes(column)) present += 1;
+  }
+  const completeness = Math.round((present / COMPLETENESS_COLUMNS.length) * 100) / 100;
+
+  const portions = (normalized.portions ?? []).map((p) => ({
+    seq: p.seq,
+    description: p.description,
+    gramWeight: p.gramWeight,
+    sourcePortionId: p.sourcePortionId ?? null,
+  }));
+
+  const foodData = {
+    dataType: normalized.dataType,
+    name: normalized.name,
+    nameEn: normalized.nameEn ?? null,
+    nameZh: normalized.nameZh ?? null,
+    aliases: normalized.aliases ?? null,
+    brand: normalized.brand ?? null,
+    category: normalized.category ?? null,
+    barcode: normalized.barcode ?? null,
+    ediblePct: normalized.ediblePct ?? null,
+    searchText: buildSearchText({
+      name: normalized.name,
+      nameZh: normalized.nameZh,
+      nameEn: normalized.nameEn,
+      aliases: normalized.aliases,
+      brand: normalized.brand,
+    }),
+    completeness,
+    verified: true,
+    status: 'active' as const,
+    contentHash: contentHash(normalized),
+    sourceMeta: { fetchedAt: new Date().toISOString() },
+  };
+
+  return prisma.food.upsert({
+    where: {
+      sourceId_sourceKey: { sourceId: source.id, sourceKey: normalized.sourceKey },
+    },
+    create: {
+      sourceId: source.id,
+      sourceKey: normalized.sourceKey,
+      ...foodData,
+      nutrients: { create: { ...nutrientData } },
+      ...(portions.length > 0 ? { portions: { create: portions } } : {}),
+    },
+    update: {
+      ...foodData,
+      // All 39 columns are written every time (missing = NULL) so a refresh
+      // clears values the product no longer reports.
+      nutrients: {
+        upsert: { create: { ...nutrientData }, update: { ...nutrientData } },
+      },
+      portions: { deleteMany: {}, ...(portions.length > 0 ? { create: portions } : {}) },
+    },
+    include: {
+      source: true,
+      nutrients: true,
+      portions: { orderBy: { seq: 'asc' } },
+    },
+  });
 }
 
 export async function getFood(userId: string, foodId: bigint) {

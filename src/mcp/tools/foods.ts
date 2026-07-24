@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { SCOPES } from '@/lib/auth/scopes';
-import { searchFoods, getFood, createCustomFood } from '@/lib/repos/food';
+import {
+  searchFoods,
+  getFood,
+  createCustomFood,
+  findOffCachedFresh,
+  cacheOffFood,
+  type FoodSearchRow,
+} from '@/lib/repos/food';
+import { fetchOffProduct } from '@/lib/off-api';
 import { ToolError, type AnyToolDef } from '../types';
 import { encodeCursor, decodeCursor } from '../pagination';
 import { zCursor, zId, zFoodSource, zFoodDataType, zPer100gNutrients } from '../schemas/common';
@@ -146,7 +154,9 @@ export const foodTools: AnyToolDef[] = [
       'Call this to find a food and its per-100g macros before logging a meal or fetching full details with get_food. ' +
       'Chinese keywords mainly match the China Food Composition Tables (source cfct); USDA and Open Food Facts entries are English-language data, ' +
       'so translate the keyword to English and search again when Chinese yields nothing (and vice versa). ' +
-      'For packaged products, look up by the barcode parameter.',
+      'For packaged products, look up by the barcode parameter. ' +
+      'When a barcode has no local match, the tool queries the Open Food Facts API in real time and caches the product into the library (source off), ' +
+      'so an empty barcode result means the code is unknown to Open Food Facts too, failed data validation, or the outbound lookup was rate-limited (retry later).',
     inputSchema: {
       query: z.string().min(1).max(100).optional().describe('Keyword(s); mutually exclusive with barcode'),
       barcode: z.string().min(6).max(20).optional().describe('Exact product barcode (EAN/UPC); mutually exclusive with query'),
@@ -178,8 +188,7 @@ export const foodTools: AnyToolDef[] = [
       ),
       next_cursor: z.string().optional(),
     },
-    // TODO(M3): on a barcode miss, fall back to the Open Food Facts API and
-    // cache the hit — openWorldHint is already true for that future behavior.
+    // openWorldHint: the barcode branch may reach the Open Food Facts API.
     annotations: { readOnlyHint: true, openWorldHint: true },
     requiredScopes: [SCOPES.FOOD],
     handler: async (input, ctx) => {
@@ -199,7 +208,7 @@ export const foodTools: AnyToolDef[] = [
         offset = decoded;
       }
 
-      const { rows, hasMore } = await searchFoods(ctx.userId, {
+      const result = await searchFoods(ctx.userId, {
         query: input.query,
         barcode: input.barcode,
         sourceCode: input.source,
@@ -207,6 +216,47 @@ export const foodTools: AnyToolDef[] = [
         limit: input.limit,
         offset,
       });
+      let rows = result.rows;
+      const hasMore = result.hasMore;
+
+      // Barcode miss → Open Food Facts live fallback. Only on the first page,
+      // and only when the filters would not exclude an OFF row anyway. The
+      // fresh-cache check confirms the miss is genuine: a <30-day-old cached
+      // row means OFF was already consulted and the local query excluded it
+      // (or it failed validation upstream) — no point calling out again.
+      if (
+        rows.length === 0 &&
+        hasBarcode &&
+        offset === 0 &&
+        (input.source === undefined || input.source === 'off') &&
+        (input.data_type === undefined || input.data_type === 'off_api')
+      ) {
+        const barcode = input.barcode as string;
+        const cached = await findOffCachedFresh(barcode);
+        if (!cached) {
+          const normalized = await fetchOffProduct(barcode);
+          if (normalized) {
+            const food = await cacheOffFood(normalized);
+            const row: FoodSearchRow = {
+              id: food.id,
+              name: food.name,
+              nameZh: food.nameZh,
+              nameEn: food.nameEn,
+              brand: food.brand,
+              barcode: food.barcode,
+              dataType: food.dataType,
+              verified: food.verified,
+              sourceCode: food.source.code,
+              energyKcal: food.nutrients?.energyKcal ?? null,
+              proteinG: food.nutrients?.proteinG ?? null,
+              carbG: food.nutrients?.carbG ?? null,
+              fatG: food.nutrients?.fatG ?? null,
+              hasPortions: food.portions.length > 0,
+            };
+            rows = [row];
+          }
+        }
+      }
 
       return {
         items: rows.map((r) => ({
