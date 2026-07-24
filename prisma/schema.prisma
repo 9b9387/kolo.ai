@@ -6,3 +6,500 @@ generator client {
 datasource db {
   provider = "mysql"
 }
+
+// =====================================================
+// A. Auth — better-auth canonical tables (v1.6.25 CLI output).
+//    Field shapes are owned by `npx @better-auth/cli generate`;
+//    only the Kolo relation fields on User are ours.
+// =====================================================
+
+model User {
+  id            String    @id
+  name          String    @db.Text
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  personalAccessTokens PersonalAccessToken[]
+  profile              UserProfile?
+  goals                Goal[]
+  dietaryPreference    DietaryPreference?
+  allergens            UserAllergen[]
+  preferenceTags       PreferenceTag[]
+  bodyMetrics          BodyMetric[]
+  dietLogs             DietLog[]
+  customFoods          Food[]                @relation("UserCustomFoods")
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?  @db.Text
+  userAgent String?  @db.Text
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  // No (length: 191) prefix: the column is VarChar(191), MySQL normalizes an
+  // equal-length prefix index away and Prisma diff would recreate it forever.
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String    @db.Text
+  providerId            String    @db.Text
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String   @db.Text
+  value      String   @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier(length: 191)])
+  @@map("verification")
+}
+
+// =====================================================
+// B. Personal Access Token — phase-1 MCP auth
+//    Token format: kolo_pat_ + base64url(randomBytes(32));
+//    only the SHA-256 hex is stored, plaintext shown once.
+// =====================================================
+
+model PersonalAccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String    @db.VarChar(100)
+  tokenHash  String    @unique @db.Char(64)
+  lastFour   String    @db.Char(4)
+  scopes     Json
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("personal_access_token")
+}
+
+// =====================================================
+// C. User profile domain — inputs an agent needs for
+//    BMR/TDEE math. Kolo stores them, never computes.
+// =====================================================
+
+enum Sex {
+  male
+  female
+  other
+}
+
+enum CalcAs {
+  male
+  female
+  average
+}
+
+enum ActivityLevel {
+  sedentary
+  lightly_active
+  moderately_active
+  very_active
+  extra_active
+}
+
+model UserProfile {
+  id                   String         @id @default(cuid())
+  userId               String         @unique
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sex                  Sex?
+  calcAs               CalcAs?
+  birthDate            DateTime?      @db.Date
+  heightCm             Decimal?       @db.Decimal(4, 1)
+  activityLevel        ActivityLevel?
+  customActivityFactor Decimal?       @db.Decimal(3, 2)
+  timezone             String?        @db.VarChar(40)
+  note                 String?        @db.Text
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@map("user_profile")
+}
+
+// Weight / body fat live in body_metric (time series), not here.
+
+enum GoalType {
+  fat_loss
+  muscle_gain
+  maintenance
+  recomposition
+  performance
+  health
+}
+
+model Goal {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalType       GoalType
+  targetWeightKg Decimal?  @db.Decimal(5, 2)
+  weeklyRateKg   Decimal?  @db.Decimal(4, 2)
+  targetDate     DateTime? @db.Date
+
+  // Written back by the agent after it runs its own calculations.
+  dailyCalorieTarget Int?
+  proteinTargetG     Decimal? @db.Decimal(6, 1)
+  carbTargetG        Decimal? @db.Decimal(6, 1)
+  fatTargetG         Decimal? @db.Decimal(6, 1)
+  fiberTargetG       Decimal? @db.Decimal(6, 1)
+  waterTargetMl      Int?
+  rationale          String?  @db.Text
+
+  // App layer keeps at most one active goal per user.
+  isActive  Boolean   @default(true)
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, isActive])
+  @@map("goal")
+}
+
+enum DietType {
+  omnivore
+  flexitarian
+  pescatarian
+  vegetarian
+  lacto_ovo_vegetarian
+  lacto_vegetarian
+  ovo_vegetarian
+  vegan
+}
+
+model DietaryPreference {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dietType       DietType?
+  religiousDiets Json      @default("[]")
+  note           String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("dietary_preference")
+}
+
+enum AllergenSeverity {
+  allergy
+  intolerance
+  avoid
+}
+
+// allergen is an open string (zod-validated slugs: FDA 9 ∪ GB 7718-2025,
+// plus "other:<text>") — regulations grow, DB enums migrate painfully.
+model UserAllergen {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  allergen  String           @db.VarChar(64)
+  severity  AllergenSeverity @default(allergy)
+  note      String?          @db.VarChar(255)
+  createdAt DateTime         @default(now())
+
+  @@unique([userId, allergen])
+  @@map("user_allergen")
+}
+
+enum PreferenceKind {
+  like
+  dislike
+  avoid_ingredient
+  cuisine
+  texture
+  other
+}
+
+model PreferenceTag {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      PreferenceKind
+  label     String         @db.VarChar(100)
+  note      String?        @db.VarChar(255)
+  createdAt DateTime       @default(now())
+
+  @@unique([userId, kind, label])
+  @@map("preference_tag")
+}
+
+enum MetricSource {
+  manual
+  smart_scale
+  agent
+  import
+}
+
+// metricType is an open string in the DB; the MCP layer validates a closed
+// set (weight/body_fat_pct/waist_cm/...) whose units are fixed by the type.
+model BodyMetric {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  metricType   String       @db.VarChar(32)
+  value        Decimal      @db.Decimal(7, 2)
+  measuredAt   DateTime
+  measuredDate DateTime     @db.Date
+  source       MetricSource @default(agent)
+  note         String?      @db.VarChar(255)
+  createdAt    DateTime     @default(now())
+
+  @@unique([userId, metricType, measuredDate])
+  @@index([userId, metricType, measuredAt(sort: Desc)])
+  @@map("body_metric")
+}
+
+// =====================================================
+// D. Food domain — three external sources + user-created.
+//    Records never merge across sources (ODbL compliance).
+// =====================================================
+
+model DataSource {
+  id                 Int     @id @default(autoincrement())
+  code               String  @unique @db.VarChar(32) // usda_fdc | off | cfct | custom
+  name               String  @db.VarChar(128)
+  license            String  @db.VarChar(64)
+  licenseUrl         String? @db.VarChar(255)
+  attributionText    String  @db.Text
+  attributionUrl     String? @db.VarChar(255)
+  requiresShareAlike Boolean @default(false)
+  redistributable    Boolean @default(true)
+  foods              Food[]
+
+  @@map("data_source")
+}
+
+model ImportRun {
+  id             BigInt    @id @default(autoincrement())
+  sourceCode     String    @db.VarChar(32)
+  kind           String    @db.VarChar(16) // full | partial | manual
+  datasetVersion String    @db.VarChar(128)
+  status         String    @default("running") @db.VarChar(16) // running | success | failed
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  stats          Json?
+  notes          String?   @db.Text
+
+  @@index([sourceCode, status])
+  @@map("import_run")
+}
+
+enum FoodStatus {
+  active
+  retired
+}
+
+model Food {
+  id        BigInt     @id @default(autoincrement())
+  sourceId  Int
+  source    DataSource @relation(fields: [sourceId], references: [id])
+  sourceKey String     @db.VarChar(64) // fdc_id / OFF barcode / CFCT food_code / custom cuid
+  dataType  String     @db.VarChar(24) // foundation|sr_legacy|survey_fndds|branded|off|off_api|cfct|custom
+
+  name      String   @db.VarChar(512)
+  nameEn    String?  @db.VarChar(512)
+  nameZh    String?  @db.VarChar(512)
+  aliases   String?  @db.Text // reserved: "|"-separated synonyms
+  brand     String?  @db.VarChar(255)
+  category  String?  @db.VarChar(255)
+  barcode   String?  @db.VarChar(32) // non-unique: OFF has duplicate codes
+  ediblePct Decimal? @db.Decimal(5, 1)
+
+  // name+nameZh+nameEn+aliases+brand, one shared builder for ETL and
+  // create_food. FULLTEXT ngram index added in a hand-written migration.
+  searchText String? @db.Text
+
+  completeness    Decimal?   @db.Decimal(3, 2)
+  verified        Boolean    @default(false)
+  status          FoodStatus @default(active) // retired via mark-and-sweep, never hard-deleted
+  contentHash     String?    @db.Char(40)
+  lastImportRunId BigInt?
+  createdByUserId String?
+  createdByUser   User?      @relation("UserCustomFoods", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  sourceMeta      Json?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  nutrients FoodNutrients?
+  portions  FoodPortion[]
+  dietLogs  DietLog[]
+
+  @@unique([sourceId, sourceKey])
+  @@index([barcode])
+  @@index([name(length: 191)])
+  @@index([createdByUserId])
+  @@index([status, sourceId])
+  @@map("food")
+}
+
+// All values are per 100 g edible portion. Missing = NULL, never 0.
+// Units are fixed per column (suffix). Canonical mapping from source
+// datasets lives in etl/lib/nutrients.ts.
+model FoodNutrients {
+  foodId BigInt @id
+  food   Food   @relation(fields: [foodId], references: [id], onDelete: Cascade)
+
+  energyKcal    Decimal? @db.Decimal(9, 3)
+  proteinG      Decimal? @db.Decimal(9, 3)
+  fatG          Decimal? @db.Decimal(9, 3)
+  carbG         Decimal? @db.Decimal(9, 3)
+  fiberG        Decimal? @db.Decimal(9, 3)
+  sugarsG       Decimal? @db.Decimal(9, 3)
+  waterG        Decimal? @db.Decimal(9, 3)
+  alcoholG      Decimal? @db.Decimal(9, 3)
+  cholesterolMg Decimal? @db.Decimal(9, 3)
+  satFatG       Decimal? @db.Decimal(9, 3)
+  mufaG         Decimal? @db.Decimal(9, 3)
+  pufaG         Decimal? @db.Decimal(9, 3)
+  transFatG     Decimal? @db.Decimal(9, 3)
+  sodiumMg      Decimal? @db.Decimal(9, 3)
+  calciumMg     Decimal? @db.Decimal(9, 3)
+  ironMg        Decimal? @db.Decimal(9, 3)
+  potassiumMg   Decimal? @db.Decimal(9, 3)
+  magnesiumMg   Decimal? @db.Decimal(9, 3)
+  phosphorusMg  Decimal? @db.Decimal(9, 3)
+  zincMg        Decimal? @db.Decimal(9, 3)
+  copperMg      Decimal? @db.Decimal(9, 3)
+  manganeseMg   Decimal? @db.Decimal(9, 3)
+  seleniumUg    Decimal? @db.Decimal(9, 3)
+  vitAUgRae     Decimal? @db.Decimal(9, 3)
+  caroteneUg    Decimal? @db.Decimal(9, 3)
+  retinolUg     Decimal? @db.Decimal(9, 3)
+  vitCMg        Decimal? @db.Decimal(9, 3)
+  vitDUg        Decimal? @db.Decimal(9, 3)
+  vitEMg        Decimal? @db.Decimal(9, 3)
+  vitKUg        Decimal? @db.Decimal(9, 3)
+  thiaminMg     Decimal? @db.Decimal(9, 3)
+  riboflavinMg  Decimal? @db.Decimal(9, 3)
+  niacinMg      Decimal? @db.Decimal(9, 3)
+  pantothenicMg Decimal? @db.Decimal(9, 3)
+  vitB6Mg       Decimal? @db.Decimal(9, 3)
+  folateUg      Decimal? @db.Decimal(9, 3)
+  vitB12Ug      Decimal? @db.Decimal(9, 3)
+  cholineMg     Decimal? @db.Decimal(9, 3)
+  caffeineMg    Decimal? @db.Decimal(9, 3)
+
+  traceFlags Json? // column names recorded as trace ("Tr" in CFCT, stored as 0)
+  extras     Json? // long-tail nutrients, keys carry units e.g. {"18:2 n-6_g": 1.2}
+
+  @@map("food_nutrients")
+}
+
+model FoodPortion {
+  id              BigInt  @id @default(autoincrement())
+  foodId          BigInt
+  food            Food    @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  seq             Int     @default(0)
+  description     String  @db.VarChar(255) // "1 cup, diced" / "1碗(米饭)"
+  gramWeight      Decimal @db.Decimal(9, 2)
+  sourcePortionId String? @db.VarChar(32)
+
+  @@index([foodId])
+  @@map("food_portion")
+}
+
+// =====================================================
+// E. Diet log — dual form, immutable nutrient snapshot.
+//    Form A: foodId set (library reference).
+//    Form B: foodId NULL + description (agent-reported).
+//    A CHECK constraint (hand-written migration) enforces
+//    foodId IS NOT NULL OR description IS NOT NULL.
+// =====================================================
+
+enum MealType {
+  breakfast
+  lunch
+  dinner
+  snack
+}
+
+enum LogSource {
+  photo
+  text
+  barcode
+  manual
+  import
+}
+
+model DietLog {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  foodId      BigInt?
+  food        Food?   @relation(fields: [foodId], references: [id], onDelete: SetNull) // never Cascade: logs outlive foods
+  description String? @db.VarChar(500)
+
+  mealType  MealType
+  mealLabel String?  @db.VarChar(50)
+
+  amountInput Decimal? @db.Decimal(8, 2) // raw amount as reported: 1
+  unitInput   String?  @db.VarChar(50) // raw unit: "碗"
+  grams       Decimal? @db.Decimal(8, 2) // normalized by the agent
+
+  // Snapshot of actual intake (not per-100g). Required regardless of form —
+  // history stays intact even if the referenced food changes or retires.
+  energyKcal     Decimal  @db.Decimal(7, 1)
+  proteinG       Decimal  @db.Decimal(7, 2)
+  carbG          Decimal  @db.Decimal(7, 2)
+  fatG           Decimal  @db.Decimal(7, 2)
+  fiberG         Decimal? @db.Decimal(7, 2)
+  sugarG         Decimal? @db.Decimal(7, 2)
+  satFatG        Decimal? @db.Decimal(7, 2)
+  sodiumMg       Decimal? @db.Decimal(8, 1)
+  extraNutrients Json?
+
+  eatenAt   DateTime // UTC instant
+  localDate DateTime @db.Date // derived server-side from eatenAt + timezone
+  timezone  String   @db.VarChar(40) // IANA, falls back to profile.timezone
+
+  source              LogSource
+  confidence          Decimal?  @db.Decimal(3, 2)
+  originalDescription String?   @db.Text
+  createdBy           String?   @db.VarChar(120) // MCP client / model identifier
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([userId, localDate])
+  @@index([userId, eatenAt])
+  @@index([foodId])
+  @@map("diet_log")
+}
