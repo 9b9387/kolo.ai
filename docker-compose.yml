@@ -25,5 +25,24 @@ services:
       timeout: 3s
       retries: 20
 
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kolo-web
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DATABASE_URL=mysql://kolo:kolo_dev@mysql:3306/kolo
+      - NODE_ENV=production
+    depends_on:
+      mysql:
+        condition: service_healthy
+
 volumes:
   mysql-data:
