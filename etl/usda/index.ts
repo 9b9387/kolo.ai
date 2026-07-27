@@ -14,11 +14,10 @@
 //                    CSVs under etl/.cache/usda (fails if absent).
 import path from 'node:path';
 import { access } from 'node:fs/promises';
-import type { RowDataPacket } from 'mysql2/promise';
 import type { NormalizedFood } from '../lib/batch';
 import { upsertFoods } from '../lib/batch';
 import { readCsvAll, streamCsv } from '../lib/csv';
-import { closePool, pool } from '../lib/db';
+import { closePool, db } from '../lib/db';
 import { downloadFile } from '../lib/download';
 import { beginRun, failRun, finishRun, type RunStats } from '../lib/run';
 import { sweepRetired } from '../lib/sweep';
@@ -192,9 +191,7 @@ async function loadDataset(key: UsdaDatasetKey, skipDownload: boolean): Promise<
 }
 
 async function usdaSourceId(): Promise<number> {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT id FROM data_source WHERE code = 'usda_fdc'`,
-  );
+  const rows = await db.query<{ id: unknown }>(`SELECT id FROM data_source WHERE code = 'usda_fdc'`);
   if (rows.length === 0) {
     throw new Error(`data_source 'usda_fdc' not found — run \`npm run db:seed\` first`);
   }

@@ -2,12 +2,13 @@
 //   - Idempotency key: (sourceId, sourceKey) unique constraint on food.
 //   - contentHash = sha1(stable serialization of the NormalizedFood row);
 //     unchanged hash → only lastImportRunId is touched (counted as skipped).
-//   - Changed/new rows: food ODKU → food_nutrients ODKU (1:1 on foodId) →
+//   - Changed/new rows: food upsert → food_nutrients upsert (1:1 on foodId) →
 //     food_portion DELETE + INSERT. Each batch (≤500 rows) is one
-//     transaction.
-import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+//     transaction. Upsert syntax is dialect-specific: MySQL
+//     `ON DUPLICATE KEY UPDATE … AS new`, Postgres `ON CONFLICT … DO UPDATE
+//     SET … = EXCLUDED.…`.
 import { buildSearchText } from '../../src/lib/search-text';
-import { pool } from './db';
+import { db, provider, q, NOW, type SqlClient } from './db';
 import { contentHash } from './hash';
 import { COMPLETENESS_COLUMNS, NUTRIENT_COLUMNS, type NutrientColumn } from './nutrients';
 
@@ -48,6 +49,33 @@ export interface UpsertCounts {
 
 const BATCH_SIZE = 500;
 
+const FOOD_COLUMNS = [
+  'sourceId',
+  'sourceKey',
+  'dataType',
+  'name',
+  'nameEn',
+  'nameZh',
+  'aliases',
+  'brand',
+  'category',
+  'barcode',
+  'ediblePct',
+  'searchText',
+  'completeness',
+  'verified',
+  'status',
+  'contentHash',
+  'lastImportRunId',
+  'sourceMeta',
+  'updatedAt',
+] as const;
+
+// Everything that gets rewritten when the content hash changed.
+const FOOD_UPDATE_COLUMNS = FOOD_COLUMNS.filter(
+  (column) => !['sourceId', 'sourceKey', 'status', 'updatedAt'].includes(column),
+);
+
 function computeCompleteness(nutrients: NormalizedFood['nutrients']): number {
   let present = 0;
   for (const column of COMPLETENESS_COLUMNS) {
@@ -60,6 +88,10 @@ function computeCompleteness(nutrients: NormalizedFood['nutrients']): number {
 function nutrientValue(row: NormalizedFood, column: NutrientColumn): number | null {
   const value = row.nutrients[column];
   return value !== undefined && value !== null && Number.isFinite(value) ? value : null;
+}
+
+function placeholders(count: number): string {
+  return Array.from({ length: count }, () => '?').join(', ');
 }
 
 /**
@@ -103,14 +135,13 @@ async function upsertBatch(
   }
   if (byKey.size === 0) return counts;
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  return db.withTransaction(async (tx) => {
     const keys = [...byKey.keys()];
-    const [existingRows] = await conn.query<RowDataPacket[]>(
-      `SELECT id, sourceKey, contentHash FROM food WHERE sourceId = ? AND sourceKey IN (?)`,
-      [sourceId, keys],
+    const existingRows = await tx.query<{ id: unknown; sourceKey: unknown; contentHash: unknown }>(
+      `SELECT id, ${q('sourceKey')} AS ${q('sourceKey')}, ${q('contentHash')} AS ${q('contentHash')}
+         FROM food
+        WHERE ${q('sourceId')} = ? AND ${q('sourceKey')} IN (${placeholders(keys.length)})`,
+      [sourceId, ...keys],
     );
     const existing = new Map<string, { id: string; contentHash: string | null }>(
       existingRows.map((row) => [
@@ -136,19 +167,22 @@ async function upsertBatch(
     // Light touch: content identical — just claim the row for this run so
     // mark-and-sweep keeps it, and revive it if a past sweep retired it.
     if (untouchedIds.length > 0) {
-      await conn.query(
-        `UPDATE food SET lastImportRunId = ?, status = 'active' WHERE id IN (?)`,
-        [runId, untouchedIds],
+      await tx.execute(
+        `UPDATE food SET ${q('lastImportRunId')} = ?, status = 'active'
+          WHERE id IN (${placeholders(untouchedIds.length)})`,
+        [runId, ...untouchedIds],
       );
     }
 
     if (dirty.length > 0) {
-      await upsertFoodRows(conn, runId, sourceId, dirty, verified);
+      await upsertFoodRows(tx, runId, sourceId, dirty, verified);
 
       const dirtyKeys = dirty.map((entry) => entry.row.sourceKey);
-      const [idRows] = await conn.query<RowDataPacket[]>(
-        `SELECT id, sourceKey FROM food WHERE sourceId = ? AND sourceKey IN (?)`,
-        [sourceId, dirtyKeys],
+      const idRows = await tx.query<{ id: unknown; sourceKey: unknown }>(
+        `SELECT id, ${q('sourceKey')} AS ${q('sourceKey')}
+           FROM food
+          WHERE ${q('sourceId')} = ? AND ${q('sourceKey')} IN (${placeholders(dirtyKeys.length)})`,
+        [sourceId, ...dirtyKeys],
       );
       const idByKey = new Map<string, string>(
         idRows.map((row) => [String(row.sourceKey), String(row.id)]),
@@ -159,28 +193,22 @@ async function upsertBatch(
         return { row: entry.row, foodId: id };
       });
 
-      await upsertNutrientRows(conn, withIds);
-      await replacePortionRows(conn, withIds);
+      await upsertNutrientRows(tx, withIds);
+      await replacePortionRows(tx, withIds);
     }
 
-    await conn.commit();
     return counts;
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 async function upsertFoodRows(
-  conn: PoolConnection,
+  tx: SqlClient,
   runId: bigint,
   sourceId: number,
   dirty: { row: NormalizedFood; hash: string }[],
   verified: boolean,
 ): Promise<void> {
-  const tuple = `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, NOW(3))`;
+  const tuple = `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ${NOW})`;
   const params: unknown[] = [];
   for (const { row, hash } of dirty) {
     params.push(
@@ -203,37 +231,33 @@ async function upsertFoodRows(
         brand: row.brand,
       }),
       computeCompleteness(row.nutrients),
-      verified ? 1 : 0,
+      verified,
       hash,
       runId,
       row.sourceMeta ? JSON.stringify(row.sourceMeta) : null,
     );
   }
-  await conn.query<ResultSetHeader>(
-    `INSERT INTO food
-       (sourceId, sourceKey, dataType, name, nameEn, nameZh, aliases, brand,
-        category, barcode, ediblePct, searchText, completeness, verified,
-        status, contentHash, lastImportRunId, sourceMeta, updatedAt)
-     VALUES ${dirty.map(() => tuple).join(', ')} AS new
-     ON DUPLICATE KEY UPDATE
-       dataType = new.dataType, name = new.name, nameEn = new.nameEn,
-       nameZh = new.nameZh, aliases = new.aliases, brand = new.brand,
-       category = new.category, barcode = new.barcode,
-       ediblePct = new.ediblePct, searchText = new.searchText,
-       completeness = new.completeness, verified = new.verified,
-       status = 'active', contentHash = new.contentHash,
-       lastImportRunId = new.lastImportRunId, sourceMeta = new.sourceMeta,
-       updatedAt = NOW(3)`,
-    params,
-  );
+  const columnList = FOOD_COLUMNS.map((column) => q(column)).join(', ');
+  const values = dirty.map(() => tuple).join(', ');
+  const sql =
+    provider === 'postgres'
+      ? `INSERT INTO food (${columnList}) VALUES ${values}
+         ON CONFLICT (${q('sourceId')}, ${q('sourceKey')}) DO UPDATE SET
+           ${FOOD_UPDATE_COLUMNS.map((column) => `${q(column)} = EXCLUDED.${q(column)}`).join(', ')},
+           status = 'active', ${q('updatedAt')} = ${NOW}`
+      : `INSERT INTO food (${columnList}) VALUES ${values} AS new
+         ON DUPLICATE KEY UPDATE
+           ${FOOD_UPDATE_COLUMNS.map((column) => `${column} = new.${column}`).join(', ')},
+           status = 'active', updatedAt = ${NOW}`;
+  await tx.execute(sql, params);
 }
 
 async function upsertNutrientRows(
-  conn: PoolConnection,
+  tx: SqlClient,
   withIds: { row: NormalizedFood; foodId: string }[],
 ): Promise<void> {
   const columns = ['foodId', ...NUTRIENT_COLUMNS, 'traceFlags', 'extras'];
-  const tuple = `(${columns.map(() => '?').join(', ')})`;
+  const tuple = `(${placeholders(columns.length)})`;
   const params: unknown[] = [];
   for (const { row, foodId } of withIds) {
     params.push(foodId);
@@ -241,24 +265,27 @@ async function upsertNutrientRows(
     params.push(row.traceFlags && row.traceFlags.length > 0 ? JSON.stringify(row.traceFlags) : null);
     params.push(row.extras && Object.keys(row.extras).length > 0 ? JSON.stringify(row.extras) : null);
   }
-  const updateList = [...NUTRIENT_COLUMNS, 'traceFlags', 'extras']
-    .map((column) => `${column} = new.${column}`)
-    .join(', ');
-  await conn.query<ResultSetHeader>(
-    `INSERT INTO food_nutrients (${columns.join(', ')})
-     VALUES ${withIds.map(() => tuple).join(', ')} AS new
-     ON DUPLICATE KEY UPDATE ${updateList}`,
-    params,
-  );
+  const columnList = columns.map((column) => q(column)).join(', ');
+  const values = withIds.map(() => tuple).join(', ');
+  const updateColumns = [...NUTRIENT_COLUMNS, 'traceFlags', 'extras'];
+  const sql =
+    provider === 'postgres'
+      ? `INSERT INTO food_nutrients (${columnList}) VALUES ${values}
+         ON CONFLICT (${q('foodId')}) DO UPDATE SET
+           ${updateColumns.map((column) => `${q(column)} = EXCLUDED.${q(column)}`).join(', ')}`
+      : `INSERT INTO food_nutrients (${columnList}) VALUES ${values} AS new
+         ON DUPLICATE KEY UPDATE ${updateColumns.map((column) => `${column} = new.${column}`).join(', ')}`;
+  await tx.execute(sql, params);
 }
 
 async function replacePortionRows(
-  conn: PoolConnection,
+  tx: SqlClient,
   withIds: { row: NormalizedFood; foodId: string }[],
 ): Promise<void> {
-  await conn.query(`DELETE FROM food_portion WHERE foodId IN (?)`, [
+  await tx.execute(
+    `DELETE FROM food_portion WHERE ${q('foodId')} IN (${placeholders(withIds.length)})`,
     withIds.map((entry) => entry.foodId),
-  ]);
+  );
   const params: unknown[] = [];
   let tupleCount = 0;
   for (const { row, foodId } of withIds) {
@@ -268,8 +295,8 @@ async function replacePortionRows(
     }
   }
   if (tupleCount === 0) return;
-  await conn.query<ResultSetHeader>(
-    `INSERT INTO food_portion (foodId, seq, description, gramWeight, sourcePortionId)
+  await tx.execute(
+    `INSERT INTO food_portion (${q('foodId')}, seq, description, ${q('gramWeight')}, ${q('sourcePortionId')})
      VALUES ${Array.from({ length: tupleCount }, () => '(?, ?, ?, ?, ?)').join(', ')}`,
     params,
   );

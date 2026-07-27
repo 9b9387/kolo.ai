@@ -15,10 +15,9 @@ import 'dotenv/config';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import type { RowDataPacket } from 'mysql2/promise';
 import { upsertFoods, type NormalizedFood } from '../lib/batch';
 import { readCsvAll } from '../lib/csv';
-import { closePool, pool } from '../lib/db';
+import { closePool, db } from '../lib/db';
 import { beginRun, failRun, finishRun, type RunStats } from '../lib/run';
 import { sweepRetired } from '../lib/sweep';
 import { CFCT_HEADER, cfctRowSchema, type CfctParsedRow } from './template';
@@ -92,9 +91,7 @@ function toNormalizedFood(row: CfctParsedRow): NormalizedFood {
 }
 
 async function getCfctSourceId(): Promise<number> {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT id FROM data_source WHERE code = 'cfct'`,
-  );
+  const rows = await db.query<{ id: unknown }>(`SELECT id FROM data_source WHERE code = 'cfct'`);
   if (rows.length === 0) {
     throw new Error(`data_source code='cfct' not found — run \`npm run db:seed\` first.`);
   }
