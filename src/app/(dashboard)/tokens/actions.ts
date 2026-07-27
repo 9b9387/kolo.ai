@@ -66,3 +66,21 @@ export async function revokePatAction(formData: FormData): Promise<void> {
 
   revalidatePath('/tokens');
 }
+
+// Hard delete — only for tokens that can no longer authenticate (revoked or
+// expired). Active tokens must be revoked first so removal is a two-step,
+// deliberate act.
+export async function deletePatAction(formData: FormData): Promise<void> {
+  const userId = await requireUserId();
+  const id = String(formData.get('id') ?? '');
+
+  await prisma.personalAccessToken.deleteMany({
+    where: {
+      id,
+      userId,
+      OR: [{ revokedAt: { not: null } }, { expiresAt: { lt: new Date() } }],
+    },
+  });
+
+  revalidatePath('/tokens');
+}

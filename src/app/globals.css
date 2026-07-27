@@ -128,3 +128,25 @@
     @apply font-sans;
   }
 }
+/* Landing "Kolo Facts" panel: staggered row reveal on load. */
+@keyframes kolo-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kolo-reveal {
+  animation: kolo-fade-up 0.45s ease-out both;
+  animation-delay: calc(var(--kolo-reveal-index, 0) * 70ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kolo-reveal {
+    animation: none;
+  }
+}

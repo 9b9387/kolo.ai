@@ -33,12 +33,15 @@ export function CreateTokenDialog() {
   const [open, setOpen] = useState(false);
   // Remounting the body (key) resets useActionState — no page reload needed.
   const [generation, setGeneration] = useState(0);
-  // While the one-time token is on screen, Esc/backdrop/X must not close the
-  // dialog — the explicit Done button is the only way out.
+  // While the one-time token is on screen, Esc and backdrop clicks are
+  // ignored so the token can't vanish by accident — closing is always
+  // possible, but only through an explicit click: the X or the Done button.
   const [showingToken, setShowingToken] = useState(false);
+  const [closeArmed, setCloseArmed] = useState(false);
 
   function handleDone() {
     setShowingToken(false);
+    setCloseArmed(false);
     setOpen(false);
     router.refresh();
   }
@@ -50,13 +53,22 @@ export function CreateTokenDialog() {
         if (next) {
           setGeneration((g) => g + 1);
           setOpen(true);
-        } else if (!showingToken) {
-          setOpen(false);
+        } else if (!showingToken || closeArmed) {
+          handleDone();
         }
       }}
     >
       <DialogTrigger render={<Button>New token</Button>} />
-      <DialogContent className="sm:max-w-lg" showCloseButton={!showingToken}>
+      <DialogContent
+        className="sm:max-w-lg"
+        showCloseButton
+        onPointerDownCapture={(event) => {
+          // Arms closing only when the dismissal originates from the explicit
+          // close button, not from Esc/backdrop while the token is visible.
+          const target = event.target as HTMLElement;
+          setCloseArmed(Boolean(target.closest('[data-slot="dialog-close"]')));
+        }}
+      >
         <CreateTokenDialogBody
           key={generation}
           onTokenShown={() => setShowingToken(true)}

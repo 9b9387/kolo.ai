@@ -5,7 +5,16 @@ import { prisma } from '@/lib/db';
 import { PAT_PREFIX } from '@/lib/auth/pat';
 import { revokePatAction } from './actions';
 import { CreateTokenDialog } from './create-token-dialog';
+import { DeleteTokenButton } from './delete-token-button';
 import { LocalDate } from './local-date';
+import { ConnectGuide } from '@/components/connect-guide';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -100,7 +109,9 @@ export default async function TokensPage() {
                           Revoke
                         </Button>
                       </form>
-                    ) : null}
+                    ) : (
+                      <DeleteTokenButton id={token.id} name={token.name} />
+                    )}
                   </TableCell>
                 </TableRow>
               );
@@ -108,6 +119,18 @@ export default async function TokensPage() {
           </TableBody>
         </Table>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Connection guide</CardTitle>
+          <CardDescription>
+            The generic MCP parameters — identical for every client; only the token is yours.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ConnectGuide />
+        </CardContent>
+      </Card>
     </main>
   );
 }
