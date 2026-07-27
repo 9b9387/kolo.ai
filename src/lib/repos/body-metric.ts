@@ -120,6 +120,26 @@ export async function listMetrics(
   });
 }
 
+/**
+ * Full ascending series of one metric within a measuredDate range.
+ * Bounded by the one-row-per-day unique key, so a year is ≤366 rows.
+ */
+export async function listMetricSeries(
+  userId: string,
+  metricType: string,
+  from: string,
+  to: string,
+): Promise<BodyMetric[]> {
+  return prisma.bodyMetric.findMany({
+    where: {
+      userId,
+      metricType,
+      measuredDate: { gte: dateColumn(from), lte: dateColumn(to) },
+    },
+    orderBy: [{ measuredDate: 'asc' }],
+  });
+}
+
 /** Latest row per metricType (exported for get_overview as well). */
 export async function latestPerType(userId: string): Promise<BodyMetric[]> {
   const groups = await prisma.bodyMetric.groupBy({
