@@ -8,6 +8,7 @@ import { preferenceTools } from './tools/preferences';
 import { metricTools } from './tools/metrics';
 import { foodTools } from './tools/foods';
 import { diaryTools } from './tools/diary';
+import { exerciseTools } from './tools/exercise';
 
 export const allTools: AnyToolDef[] = [
   ...overviewTools, //   get_overview
@@ -17,6 +18,7 @@ export const allTools: AnyToolDef[] = [
   ...metricTools, //     log_body_metrics, list_body_metrics, get_body_metric_trend
   ...foodTools, //       search_foods, get_food, create_food
   ...diaryTools, //      log_meal, update_meal_entry, delete_meal_entries, list_meals, get_daily_summary
+  ...exerciseTools, //   log_exercise, update_exercise_entry, delete_exercise_entries, list_exercises
 ];
 
 export function registerAllTools(server: McpServer) {

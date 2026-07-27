@@ -33,6 +33,7 @@ model User {
   preferenceTags       PreferenceTag[]
   bodyMetrics          BodyMetric[]
   dietLogs             DietLog[]
+  exerciseLogs         ExerciseLog[]
   customFoods          Food[]                @relation("UserCustomFoods")
 
   @@unique([email])
@@ -148,6 +149,9 @@ model UserProfile {
   activityLevel        ActivityLevel?
   customActivityFactor Decimal?       @db.Decimal(3, 2)
   timezone             String?        @db.VarChar(40)
+  // Preferred nutrient reference standard (cn_nrv | us_dri); open string,
+  // MCP layer validates — new standards should not need a migration.
+  nutrientRefStandard  String?        @db.VarChar(16)
   note                 String?        @db.Text
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
@@ -443,6 +447,68 @@ model FoodPortion {
 
   @@index([foodId])
   @@map("food_portion")
+}
+
+// =====================================================
+// D2. Exercise log — the expenditure side, symmetric with diet logs:
+//     the agent estimates energy burned, Kolo only stores it.
+// =====================================================
+
+enum ExerciseCategory {
+  cardio
+  strength
+  flexibility
+  sports
+  daily_activity
+  other
+}
+
+enum ExerciseIntensity {
+  low
+  moderate
+  high
+}
+
+enum ExerciseSource {
+  photo // screenshot of a watch/app
+  text
+  device
+  manual
+  import
+}
+
+model ExerciseLog {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activity   String             @db.VarChar(100) // "晨跑", "bench press", ...
+  category   ExerciseCategory?
+  intensity  ExerciseIntensity?
+  durationMin Decimal?          @db.Decimal(6, 1)
+  distanceKm  Decimal?          @db.Decimal(6, 2)
+
+  // Agent-estimated energy expenditure for the session (kcal). Kolo never
+  // computes this — MET math and device readings are the caller's business.
+  energyKcal Decimal @db.Decimal(7, 1)
+
+  extraMetrics Json? // {"avg_hr": 152, "steps": 8200, ...} keys carry units
+
+  startedAt DateTime // UTC instant
+  localDate DateTime @db.Date // derived server-side from startedAt + timezone
+  timezone  String   @db.VarChar(40)
+
+  source              ExerciseSource
+  confidence          Decimal?       @db.Decimal(3, 2)
+  originalDescription String?        @db.Text
+  note                String?        @db.VarChar(500)
+  createdBy           String?        @db.VarChar(120)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([userId, localDate])
+  @@index([userId, startedAt])
+  @@map("exercise_log")
 }
 
 // =====================================================

@@ -17,6 +17,7 @@ import {
 import { localDateOf, dateColumn, isValidTimezone } from '@/lib/dates';
 import * as dietLogRepo from '@/lib/repos/diet-log';
 import type { DietLogWriteData, DietLogPatch } from '@/lib/repos/diet-log';
+import { dailyExerciseTotals } from '@/lib/repos/exercise-log';
 import type { DietLog } from '@/generated/prisma/client';
 
 // Diet diary tools. Kolo stores what the caller reports — nutrient values are
@@ -514,23 +515,32 @@ export const diaryTools: AnyToolDef[] = [
     title: 'Daily intake sums',
     description:
       'Per-day and per-meal-type raw sums of the logged nutrient snapshots for a local-date range ' +
-      'of at most 31 days. Returns plain aggregation only — no evaluation, no target or adequacy ' +
-      'judgement, no advice; all analysis (goals, trends, recommendations) is the calling agent\'s ' +
-      'job. Days without entries are omitted; an optional nutrient is null when no entry that day ' +
-      'carried it.',
+      'of at most 31 days, plus per-day exercise expenditure sums (entry count, kcal burned, ' +
+      'minutes). Returns plain aggregation only — no evaluation, no energy-balance verdict, no ' +
+      'advice; all analysis (goals, trends, recommendations) is the calling agent\'s job. Days ' +
+      'without any diet or exercise entries are omitted; intake totals are null on exercise-only ' +
+      'days; an optional nutrient is null when no entry that day carried it.',
     inputSchema: getDailySummaryInput,
     outputSchema: {
       days: z.array(
         z.object({
           date: zDate,
-          entry_count: z.number().int(),
-          totals: zTotalsOut,
+          entry_count: z.number().int().describe('Diet entries that day'),
+          totals: zTotalsOut.nullable().describe('null on exercise-only days'),
           by_meal_type: z.object({
             breakfast: zMealGroupOut.optional(),
             lunch: zMealGroupOut.optional(),
             dinner: zMealGroupOut.optional(),
             snack: zMealGroupOut.optional(),
           }),
+          exercise: z
+            .object({
+              entry_count: z.number().int(),
+              energy_kcal: z.number(),
+              duration_min: z.number().nullable(),
+            })
+            .optional()
+            .describe('Present when the day has exercise entries'),
         }),
       ),
     },
@@ -556,11 +566,18 @@ export const diaryTools: AnyToolDef[] = [
         sodium_mg: sum.sodiumMg,
       });
 
-      const days = byDay.map((d) => ({
+      type Day = {
+        date: string;
+        entry_count: number;
+        totals: ReturnType<typeof toTotals> | null;
+        by_meal_type: Record<string, { entry_count: number; totals: ReturnType<typeof toTotals> }>;
+        exercise?: { entry_count: number; energy_kcal: unknown; duration_min: unknown };
+      };
+      const days: Day[] = byDay.map((d) => ({
         date: d.localDate.toISOString().slice(0, 10),
         entry_count: d._count._all,
         totals: toTotals(d._sum),
-        by_meal_type: {} as Record<string, { entry_count: number; totals: ReturnType<typeof toTotals> }>,
+        by_meal_type: {},
       }));
       const byDate = new Map(days.map((d) => [d.date, d]));
       for (const g of byDayMeal) {
@@ -568,6 +585,24 @@ export const diaryTools: AnyToolDef[] = [
         if (!day) continue;
         day.by_meal_type[g.mealType] = { entry_count: g._count._all, totals: toTotals(g._sum) };
       }
+
+      // Expenditure side: exercise-only days join the list with null intake.
+      const exerciseTotals = await dailyExerciseTotals(ctx.userId, range);
+      for (const g of exerciseTotals) {
+        const date = g.localDate.toISOString().slice(0, 10);
+        let day = byDate.get(date);
+        if (!day) {
+          day = { date, entry_count: 0, totals: null, by_meal_type: {} };
+          days.push(day);
+          byDate.set(date, day);
+        }
+        day.exercise = {
+          entry_count: g._count._all,
+          energy_kcal: g._sum.energyKcal ?? 0,
+          duration_min: g._sum.durationMin,
+        };
+      }
+      days.sort((a, b) => (a.date < b.date ? -1 : 1));
       return { days };
     },
   },
