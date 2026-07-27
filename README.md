@@ -20,8 +20,29 @@ Kolo provides base data and structured storage, nothing else.
 
 ## Stack
 
-Next.js (App Router) · Prisma 7 (MySQL 8.4, mariadb driver adapter) ·
+Next.js (App Router) · Prisma 7 (MySQL **or** PostgreSQL, driver adapters) ·
 better-auth · mcp-handler (stateless Streamable HTTP) · shadcn/ui
+
+## Choosing a database engine
+
+Kolo runs on MySQL 8.4 (default) or PostgreSQL 15+ (e.g. Supabase), selected
+by `DB_PROVIDER` in `.env`:
+
+| | mysql (default) | postgres |
+|---|---|---|
+| Runtime config | `DB_HOST/PORT/USER/PASSWORD/NAME` | `DATABASE_URL` |
+| Prisma schema | `prisma/schema.prisma` (canonical) | `prisma/schema.postgres.prisma` (generated — edit the canonical file, then `npm run db:gen-pg-schema`) |
+| Migrations | `prisma/migrations/` | `prisma/migrations-postgres/` |
+| Chinese/English food search | FULLTEXT ngram index | pg_trgm GIN index |
+
+After switching `DB_PROVIDER`, re-run `npx prisma generate` (the generated
+client is engine-specific), then `npx prisma migrate deploy`.
+
+For Supabase use the **session pooler** URL (direct connections are
+IPv6-only): `postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=no-verify`.
+Schema changes must be applied to both engines: generate the MySQL migration
+with `prisma migrate dev`, regenerate the PG schema, and produce the PG
+migration with `prisma migrate diff` into `prisma/migrations-postgres/`.
 
 ## Development
 

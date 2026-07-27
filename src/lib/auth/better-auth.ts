@@ -4,7 +4,9 @@ import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
 
 export const auth = betterAuth({
-  database: prismaAdapter(prisma, { provider: 'mysql' }),
+  database: prismaAdapter(prisma, {
+    provider: env.DB_PROVIDER === 'postgres' ? 'postgresql' : 'mysql',
+  }),
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,
   emailAndPassword: {
