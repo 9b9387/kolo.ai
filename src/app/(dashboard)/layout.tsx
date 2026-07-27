@@ -15,8 +15,8 @@ export default async function DashboardLayout({
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex items-center justify-between border-b px-6 py-3">
-        <Link href="/" className="font-semibold">
-          Kolo
+        <Link href="/" className="font-heading tracking-tight">
+          KOLO
         </Link>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-muted-foreground">{session.user.email}</span>

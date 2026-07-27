@@ -23,9 +23,21 @@ const EXPIRY_OPTIONS = [
   { value: 'never', label: 'Never expires' },
 ];
 
-function mcpSnippet(token: string, origin: string) {
-  return `claude mcp add --transport http kolo ${origin}/mcp \\
-  --header "Authorization: Bearer ${token}"`;
+// A message the user forwards to their own agent; the agent does the setup.
+function agentSetupPrompt(token: string, origin: string) {
+  return `Please connect yourself to my Kolo nutrition service over MCP.
+
+Server name: kolo
+Type: HTTP (MCP Streamable HTTP)
+URL: ${origin}/mcp
+Required header: Authorization: Bearer ${token}
+
+Add it to your MCP configuration, then verify the connection by listing the
+available tools — you should see 21 (get_overview, log_meal, search_foods, …).
+
+Kolo stores my nutrition data: profile, goals, meals, workouts, body metrics
+and food lookups. Use it whenever we discuss my diet, weight or training.
+Call get_overview first when you need my background. Keep the token secret.`;
 }
 
 export function CreateTokenDialog() {
@@ -86,7 +98,7 @@ function CreateTokenDialogBody({
   onTokenShown: () => void;
   onDone: () => void;
 }) {
-  const [copied, setCopied] = useState<'token' | 'snippet' | null>(null);
+  const [copied, setCopied] = useState<'token' | 'prompt' | null>(null);
   const [state, formAction, pending] = useActionState<CreatePatState, FormData>(
     createPatAction,
     { status: 'idle' },
@@ -99,13 +111,14 @@ function CreateTokenDialogBody({
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
 
-  async function copy(text: string, which: 'token' | 'snippet') {
+  async function copy(text: string, which: 'token' | 'prompt') {
     await navigator.clipboard.writeText(text);
     setCopied(which);
     setTimeout(() => setCopied(null), 1500);
   }
 
   if (state.status === 'created') {
+    const setupPrompt = agentSetupPrompt(state.token, origin);
     return (
       <>
         <DialogHeader>
@@ -125,16 +138,19 @@ function CreateTokenDialogBody({
             </div>
           </div>
           <div className="grid gap-2">
-            <Label>Connect Claude Code</Label>
-            <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs">
-              {mcpSnippet(state.token, origin)}
+            <Label>Set up your agent</Label>
+            <p className="text-xs text-muted-foreground">
+              Send this message to your agent — it will connect itself.
+            </p>
+            <pre className="max-h-48 overflow-auto rounded-md border bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap">
+              {setupPrompt}
             </pre>
             <Button
               type="button"
               variant="outline"
-              onClick={() => copy(mcpSnippet(state.token, origin), 'snippet')}
+              onClick={() => copy(setupPrompt, 'prompt')}
             >
-              {copied === 'snippet' ? 'Copied' : 'Copy command'}
+              {copied === 'prompt' ? 'Copied' : 'Copy message for your agent'}
             </Button>
           </div>
         </div>

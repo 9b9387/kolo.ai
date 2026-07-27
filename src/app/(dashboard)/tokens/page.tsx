@@ -54,7 +54,7 @@ export default async function TokensPage() {
     <main className="grid gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Personal access tokens</h1>
+          <h1 className="font-heading text-2xl tracking-tight">Personal access tokens</h1>
           <p className="text-sm text-muted-foreground">
             Tokens authorize agents against the MCP endpoint. The full value is
             shown only once, at creation.

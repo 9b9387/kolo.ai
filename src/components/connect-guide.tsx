@@ -1,47 +1,10 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { CopyButton } from '@/components/copy-button';
 
-// Generic MCP connection parameters + ready-to-paste client configs.
-// Rendered on the landing page (token placeholder) and the tokens page.
+// Generic MCP connection parameters, shown after sign-in on the tokens page.
 
 const TOKEN_PLACEHOLDER = '<your kolo_pat_… token>';
-
-function claudeCodeCommand(origin: string) {
-  return `claude mcp add --transport http kolo ${origin}/mcp \\
-  --header "Authorization: Bearer ${TOKEN_PLACEHOLDER}"`;
-}
-
-function jsonConfig(origin: string) {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        kolo: {
-          type: 'http',
-          url: `${origin}/mcp`,
-          headers: { Authorization: `Bearer ${TOKEN_PLACEHOLDER}` },
-        },
-      },
-    },
-    null,
-    2,
-  );
-}
-
-function Snippet({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</p>
-        <CopyButton text={text} />
-      </div>
-      <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-xs leading-relaxed">
-        {text}
-      </pre>
-    </div>
-  );
-}
 
 const subscribeNoop = () => () => {};
 
@@ -64,7 +27,7 @@ export function ConnectGuide() {
   ];
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <dl className="grid gap-0 overflow-hidden rounded-md border">
         {parameters.map(([term, value]) => (
           <div
@@ -78,11 +41,9 @@ export function ConnectGuide() {
           </div>
         ))}
       </dl>
-      <Snippet title="Claude Code" text={claudeCodeCommand(origin)} />
-      <Snippet title="JSON config (Claude Desktop, Cursor, …)" text={jsonConfig(origin)} />
       <p className="text-xs text-muted-foreground">
-        Replace {TOKEN_PLACEHOLDER} with a token from the Tokens page. Keep it secret — it grants
-        full access to your Kolo data.
+        Replace {TOKEN_PLACEHOLDER} with a token from this page. Keep it secret — it grants full
+        access to your Kolo data.
       </p>
     </div>
   );
