@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/db';
+import { env } from '@/lib/env';
 import { Prisma } from '@/generated/prisma/client';
 import { buildSearchText } from '@/lib/search-text';
 // ETL-shared pure modules (relative paths — etl/ is outside the @/ alias).
@@ -143,6 +144,10 @@ async function searchFoodsFulltext(
   const cleaned = query.replace(BOOLEAN_MODE_META, ' ').replace(/\s+/g, ' ').trim();
   if (cleaned.length === 0) return { rows: [], hasMore: false };
 
+  if (env.DB_PROVIDER === 'postgres') {
+    return searchFoodsTrgm(userId, cleaned, sourceCode, dataType, limit, offset);
+  }
+
   const sourceFilter = sourceCode ? Prisma.sql`AND s.code = ${sourceCode}` : Prisma.empty;
   const dataTypeFilter = dataType ? Prisma.sql`AND f.dataType = ${dataType}` : Prisma.empty;
 
@@ -162,6 +167,63 @@ async function searchFoodsFulltext(
       ${sourceFilter}
       ${dataTypeFilter}
     ORDER BY MATCH(f.searchText) AGAINST(${cleaned} IN BOOLEAN MODE) DESC, f.id ASC
+    LIMIT ${limit + 1} OFFSET ${offset}
+  `);
+
+  const hasMore = raw.length > limit;
+  const rows: FoodSearchRow[] = raw.slice(0, limit).map((r) => ({
+    id: BigInt(r.id),
+    name: r.name,
+    nameZh: r.nameZh,
+    nameEn: r.nameEn,
+    brand: r.brand,
+    barcode: r.barcode,
+    dataType: r.dataType,
+    verified: Boolean(r.verified),
+    sourceCode: r.sourceCode,
+    energyKcal: r.energyKcal,
+    proteinG: r.proteinG,
+    carbG: r.carbG,
+    fatG: r.fatG,
+    hasPortions: Boolean(r.hasPortions),
+  }));
+  return { rows, hasMore };
+}
+
+// Postgres flavor: substring match on searchText accelerated by the GIN
+// trigram index (gin_trgm_ops covers ILIKE '%…%'), ranked by trigram
+// similarity. Multi-word queries must match every term (AND).
+async function searchFoodsTrgm(
+  userId: string,
+  cleaned: string,
+  sourceCode: string | undefined,
+  dataType: string | undefined,
+  limit: number,
+  offset: number,
+): Promise<SearchFoodsResult> {
+  const terms = cleaned.split(' ').map((t) => t.replace(/[\\%_]/g, (m) => `\\${m}`));
+  const termFilter = terms.reduce(
+    (acc, term) => Prisma.sql`${acc} AND f."searchText" ILIKE ${'%' + term + '%'}`,
+    Prisma.empty,
+  );
+  const sourceFilter = sourceCode ? Prisma.sql`AND s.code = ${sourceCode}` : Prisma.empty;
+  const dataTypeFilter = dataType ? Prisma.sql`AND f."dataType" = ${dataType}` : Prisma.empty;
+
+  const raw = await prisma.$queryRaw<RawSearchRow[]>(Prisma.sql`
+    SELECT
+      f.id, f.name, f."nameZh", f."nameEn", f.brand, f.barcode, f."dataType", f.verified,
+      s.code AS "sourceCode",
+      n."energyKcal", n."proteinG", n."carbG", n."fatG",
+      EXISTS(SELECT 1 FROM food_portion p WHERE p."foodId" = f.id) AS "hasPortions"
+    FROM food f
+    JOIN data_source s ON s.id = f."sourceId"
+    LEFT JOIN food_nutrients n ON n."foodId" = f.id
+    WHERE f.status = 'active'
+      AND (f."createdByUserId" IS NULL OR f."createdByUserId" = ${userId})
+      ${termFilter}
+      ${sourceFilter}
+      ${dataTypeFilter}
+    ORDER BY similarity(f."searchText", ${cleaned}) DESC, f.id ASC
     LIMIT ${limit + 1} OFFSET ${offset}
   `);
 
