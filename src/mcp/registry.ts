@@ -9,6 +9,7 @@ import { metricTools } from './tools/metrics';
 import { foodTools } from './tools/foods';
 import { diaryTools } from './tools/diary';
 import { exerciseTools } from './tools/exercise';
+import { referenceTools } from './tools/references';
 
 export const allTools: AnyToolDef[] = [
   ...overviewTools, //   get_overview
@@ -19,6 +20,7 @@ export const allTools: AnyToolDef[] = [
   ...foodTools, //       search_foods, get_food, create_food
   ...diaryTools, //      log_meal, update_meal_entry, delete_meal_entries, list_meals, get_daily_summary
   ...exerciseTools, //   log_exercise, update_exercise_entry, delete_exercise_entries, list_exercises
+  ...referenceTools, //  get_nutrient_references
 ];
 
 export function registerAllTools(server: McpServer) {

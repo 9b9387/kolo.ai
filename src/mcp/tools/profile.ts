@@ -36,6 +36,13 @@ const updateProfileInput = {
     .optional()
     .describe('Overrides the activity_level factor when the agent derived a bespoke one; null clears it'),
   timezone: zTimezone.optional(),
+  nutrient_ref_standard: z
+    .enum(['cn_nrv', 'us_dri'])
+    .nullable()
+    .optional()
+    .describe(
+      'Preferred nutrient reference standard for get_nutrient_references: cn_nrv (中国 GB 28050 营养素参考值) or us_dri (US DRI); null clears it',
+    ),
   note: z.string().max(2000).nullable().optional(),
 };
 
@@ -47,6 +54,7 @@ export const profileOutput = z.object({
   activity_level: zActivityLevel.nullable(),
   custom_activity_factor: z.number().nullable(),
   timezone: z.string().nullable(),
+  nutrient_ref_standard: z.enum(['cn_nrv', 'us_dri']).nullable(),
   note: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -64,6 +72,7 @@ export function toProfileOutput(p: ProfileRow) {
     activity_level: p.activityLevel,
     custom_activity_factor: p.customActivityFactor,
     timezone: p.timezone,
+    nutrient_ref_standard: p.nutrientRefStandard,
     note: p.note,
     created_at: p.createdAt,
     updated_at: p.updatedAt,
@@ -97,6 +106,7 @@ export const profileTools: AnyToolDef[] = [
         activityLevel: input.activity_level,
         customActivityFactor: input.custom_activity_factor,
         timezone: input.timezone,
+        nutrientRefStandard: input.nutrient_ref_standard,
         note: input.note,
       });
       return { profile: toProfileOutput(profile) };

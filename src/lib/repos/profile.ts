@@ -15,6 +15,7 @@ export interface ProfileData {
     | 'extra_active';
   customActivityFactor?: number | null;
   timezone?: string;
+  nutrientRefStandard?: 'cn_nrv' | 'us_dri' | null;
   note?: string | null;
 }
 
