@@ -17,7 +17,7 @@ export default function Home() {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        MCP endpoint: <code className="font-mono">/api/mcp</code> · authorize
+        MCP endpoint: <code className="font-mono">/mcp</code> · authorize
         with a personal access token from the Tokens page
       </p>
     </main>

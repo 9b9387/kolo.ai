@@ -34,10 +34,10 @@ npm run db:check            # verify DB connectivity
 npm run dev                 # http://localhost:3000
 ```
 
-MCP endpoint: `POST /api/mcp` with `Authorization: Bearer kolo_pat_...`
+MCP endpoint: `POST /mcp` with `Authorization: Bearer kolo_pat_...`
 
 ```bash
-claude mcp add --transport http kolo http://localhost:3000/api/mcp \
+claude mcp add --transport http kolo http://localhost:3000/mcp \
   --header "Authorization: Bearer <your token>"
 ```
 

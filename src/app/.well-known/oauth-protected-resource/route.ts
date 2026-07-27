@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const base = baseUrl(request);
   return Response.json(
     {
-      resource: `${base}/api/mcp`,
+      resource: `${base}/mcp`,
       authorization_servers: [base],
       bearer_methods_supported: ['header'],
       scopes_supported: ALL_SCOPES,

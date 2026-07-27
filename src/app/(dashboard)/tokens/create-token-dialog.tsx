@@ -24,7 +24,7 @@ const EXPIRY_OPTIONS = [
 ];
 
 function mcpSnippet(token: string, origin: string) {
-  return `claude mcp add --transport http kolo ${origin}/api/mcp \\
+  return `claude mcp add --transport http kolo ${origin}/mcp \\
   --header "Authorization: Bearer ${token}"`;
 }
 
