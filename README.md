@@ -62,6 +62,23 @@ claude mcp add --transport http kolo http://localhost:3000/mcp \
   --header "Authorization: Bearer <your token>"
 ```
 
+## Deploying (Vercel + Supabase)
+
+The production deployment runs on Vercel with Supabase Postgres:
+
+1. `vercel link`, then set production env vars: `DB_PROVIDER=postgres`,
+   `DATABASE_URL` (use the Supabase **transaction pooler**, port 6543, with
+   `?sslmode=no-verify` — serverless functions need pooled connections),
+   `BETTER_AUTH_SECRET` (real secret), `BETTER_AUTH_URL` (the production URL).
+2. Apply migrations once per schema change, from any machine:
+   `DB_PROVIDER=postgres DATABASE_URL=<session-pooler-url> npx prisma migrate deploy`
+   (migrate uses the session pooler, port 5432).
+3. `vercel deploy --prod`. The build's postinstall generates the
+   Postgres-flavored Prisma client from the env vars.
+
+ETL imports run from a developer machine against the same `DATABASE_URL` —
+they are not part of the deployment.
+
 ## Importing food data
 
 ```bash
