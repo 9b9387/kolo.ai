@@ -62,6 +62,19 @@ claude mcp add --transport http kolo http://localhost:3000/mcp \
   --header "Authorization: Bearer <your token>"
 ```
 
+## Teaching your agent to use Kolo
+
+`skills/kolo-nutrition-assistant/` is an agent skill for the *consumer* side:
+it teaches any skill-capable agent (Claude Code, etc.) the Kolo workflow —
+overview first, how to log meals and workouts, which math is the agent's
+job, and the full 21-tool reference. Install it into your agent with:
+
+```bash
+npx skills add 9b9387/kolo.ai
+```
+
+Then connect the MCP server with a token from the Tokens page.
+
 ## Deploying (Vercel + Supabase)
 
 The production deployment runs on Vercel with Supabase Postgres:
