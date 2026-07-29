@@ -6,6 +6,11 @@ nutrition data and user records, and exposes everything through an MCP
 recognition, BMR/TDEE math, and dietary analysis are the calling agent's job.
 Kolo provides base data and structured storage, nothing else.
 
+**Try it live**: <https://kolo.biubiu.cool> — sign up, then point any
+MCP-capable agent at `https://kolo.biubiu.cool/mcp`. OAuth-capable clients
+(Claude, Hermes, OpenClaw, …) authorize with a browser sign-in; headless
+clients use a personal access token from the Tokens page.
+
 ## What it does
 
 1. **Food nutrition database** — cleaned and imported from USDA FoodData
@@ -14,9 +19,10 @@ Kolo provides base data and structured storage, nothing else.
 2. **User data over MCP** — profile (inputs for metabolic calculations),
    goals, dietary preferences, body metrics, and structured diet logs written
    back by the user's own agent.
-3. **Auth** — the web UI only handles sign-up/sign-in and issuing personal
-   access tokens (PAT) that authorize agents against the MCP endpoint.
-   OAuth 2.1 for hosted connectors (claude.ai) is planned as phase 2.
+3. **Auth** — OAuth 2.1 for MCP clients (discovery + dynamic client
+   registration + PKCE; a browser sign-in completes authorization, and
+   OAuth grants are managed on the Connected apps page), plus personal
+   access tokens (PAT) for headless clients, issued on the Tokens page.
 
 ## Stack
 
