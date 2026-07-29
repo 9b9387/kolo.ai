@@ -1,20 +1,33 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { prisma } from '@/lib/db';
+import { auth } from '@/lib/auth/better-auth';
 import { hashPat, PAT_PREFIX } from '@/lib/auth/pat';
 
 const LAST_USED_THROTTLE_MS = 5 * 60_000;
 
-// The single auth cut-point for the MCP endpoint. Phase 2 adds an OAuth
-// branch below (better-auth oauth-provider access tokens); both branches
-// normalize to the same AuthInfo shape so tools and repos never change.
+// The single auth cut-point for the MCP endpoint. Two token kinds — PATs
+// (kolo_pat_ prefix, headless clients) and better-auth mcp-plugin OAuth
+// access tokens (hosted connectors) — normalize to the same AuthInfo shape
+// so tools and repos never change.
 export async function verifyMcpToken(
-  _req: Request,
+  req: Request,
   bearerToken?: string,
 ): Promise<AuthInfo | undefined> {
   if (!bearerToken) return undefined;
   if (bearerToken.startsWith(PAT_PREFIX)) return verifyPat(bearerToken);
-  // Phase 2: return verifyOAuthToken(_req, bearerToken);
-  return undefined;
+  return verifyOAuthToken(req);
+}
+
+async function verifyOAuthToken(req: Request): Promise<AuthInfo | undefined> {
+  const session = await auth.api.getMcpSession({ headers: req.headers });
+  if (!session?.userId) return undefined;
+  return {
+    token: session.accessToken,
+    clientId: session.clientId,
+    scopes: session.scopes.split(' ').filter(Boolean),
+    expiresAt: Math.floor(session.accessTokenExpiresAt.getTime() / 1000),
+    extra: { userId: session.userId, authMethod: 'oauth', tokenId: session.accessToken },
+  };
 }
 
 async function verifyPat(token: string): Promise<AuthInfo | undefined> {

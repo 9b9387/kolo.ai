@@ -36,6 +36,15 @@ function SignInForm() {
       setError(error.message ?? 'Sign-in failed.');
       return;
     }
+    // MCP OAuth flow: the mcp plugin lands here with the original authorize
+    // query attached. Resume with a top-level navigation — the session now
+    // exists, so authorize issues the code and redirects to the client's
+    // callback. (The plugin's after-hook 302 on the sign-in POST itself is
+    // fetch-internal and can be blocked by PNA/CORS for loopback callbacks.)
+    if (searchParams.has('client_id') && searchParams.has('response_type')) {
+      window.location.assign(`/api/auth/mcp/authorize?${searchParams.toString()}`);
+      return;
+    }
     // Only same-site paths: a raw value here would be an open redirect
     // (absolute, protocol-relative // and /\ forms all escape the origin).
     const redirect = searchParams.get('redirect');
@@ -77,7 +86,12 @@ function SignInForm() {
           </Button>
           <p className="text-sm text-muted-foreground">
             No account?{' '}
-            <Link className="underline underline-offset-4" href="/sign-up">
+            {/* Carry the query across so an in-flight OAuth authorize
+                survives switching to sign-up. */}
+            <Link
+              className="underline underline-offset-4"
+              href={`/sign-up${searchParams.size ? `?${searchParams.toString()}` : ''}`}
+            >
               Create one
             </Link>
           </p>

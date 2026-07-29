@@ -27,6 +27,10 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
+  oauthApplications OauthApplication[]
+  oauthAccessTokens OauthAccessToken[]
+  oauthConsents     OauthConsent[]
+
   personalAccessTokens PersonalAccessToken[]
   profile              UserProfile?
   goals                Goal[]
@@ -90,6 +94,70 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+// better-auth mcp plugin (OAuth 2.1 authorization server for MCP clients).
+// Same schema as the oidc-provider plugin; clients arrive via dynamic
+// client registration, tokens back the hosted-connector auth path.
+
+model OauthApplication {
+  id           String   @id
+  name         String   @db.Text
+  icon         String?  @db.Text
+  metadata     String?  @db.Text
+  clientId     String
+  clientSecret String?  @db.Text
+  redirectUrls String   @db.Text
+  type         String   @db.Text
+  disabled     Boolean  @default(false)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accessTokens OauthAccessToken[]
+  consents     OauthConsent[]
+
+  @@unique([clientId])
+  @@index([userId])
+  @@map("oauth_application")
+}
+
+model OauthAccessToken {
+  id                    String           @id
+  accessToken           String
+  refreshToken          String
+  accessTokenExpiresAt  DateTime
+  refreshTokenExpiresAt DateTime
+  clientId              String
+  application           OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId                String?
+  user                  User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopes                String           @db.Text
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@unique([accessToken])
+  @@unique([refreshToken])
+  @@index([clientId])
+  @@index([userId])
+  @@map("oauth_access_token")
+}
+
+model OauthConsent {
+  id           String           @id
+  clientId     String
+  application  OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopes       String           @db.Text
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  consentGiven Boolean
+
+  @@index([clientId])
+  @@index([userId])
+  @@map("oauth_consent")
 }
 
 // =====================================================

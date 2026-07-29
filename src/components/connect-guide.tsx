@@ -21,7 +21,8 @@ export function ConnectGuide() {
   const parameters: [string, string][] = [
     ['Endpoint', `${origin}/mcp`],
     ['Transport', 'HTTP (MCP Streamable HTTP, stateless)'],
-    ['Auth header', `Authorization: Bearer ${TOKEN_PLACEHOLDER}`],
+    ['OAuth', 'Supported clients (Claude, Hermes, OpenClaw) just need the endpoint — a browser sign-in completes authorization, no token to paste'],
+    ['Auth header', `Authorization: Bearer ${TOKEN_PLACEHOLDER} (headless clients without OAuth support)`],
     ['Scopes', 'profile · food · diary (tokens carry all three)'],
     ['Tools', '21 — profile, goals, preferences, body metrics, foods, diet & exercise logs, references'],
   ];
@@ -42,8 +43,8 @@ export function ConnectGuide() {
         ))}
       </dl>
       <p className="text-xs text-muted-foreground">
-        Replace {TOKEN_PLACEHOLDER} with a token from this page. Keep it secret — it grants full
-        access to your Kolo data.
+        Prefer OAuth when your client supports it. Otherwise replace {TOKEN_PLACEHOLDER} with a
+        token from this page and keep it secret — it grants full access to your Kolo data.
       </p>
     </div>
   );
