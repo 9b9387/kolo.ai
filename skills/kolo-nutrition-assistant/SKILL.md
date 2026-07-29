@@ -52,8 +52,12 @@ preferences in one call.
   (`cn_nrv` 中国 NRV / `us_dri` US DRI) and store it as
   `nutrient_ref_standard`. Then ask current weight (and body fat % if known)
   and store it via `log_body_metrics` — the profile has no weight field, and
-  the metabolic math below needs it. Offer to set a goal (`set_goal`) once
-  the numbers are in.
+  the metabolic math below needs it. Finish by proposing a goal, not just
+  offering one: ask what they're after (lose / maintain / gain, and how
+  fast), run the metabolic math below, and present concrete numbers — daily
+  calories, protein/carb/fat targets — with a one-line explanation of how
+  you got them. Only call `set_goal` after the user confirms or adjusts the
+  proposal; never set a goal they haven't seen.
 - Respect `preferences` (diet type, religious restrictions, allergens with
   severity, likes/dislikes) in every suggestion you make.
 
