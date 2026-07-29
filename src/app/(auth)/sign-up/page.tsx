@@ -22,24 +22,35 @@ function SignUpForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const isOAuthFlow = searchParams.has('client_id') && searchParams.has('response_type');
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setPending(true);
     const form = new FormData(event.currentTarget);
-    const { error } = await authClient.signUp.email({
-      name: String(form.get('name')),
-      email: String(form.get('email')),
-      password: String(form.get('password')),
-    });
+    // OAuth flow: block the after-hook's fetch-internal 302 and resume with
+    // a top-level navigation instead (see sign-in for the full rationale).
+    let error: { status?: number; message?: string | null } | null = null;
+    try {
+      const result = await authClient.signUp.email({
+        name: String(form.get('name')),
+        email: String(form.get('email')),
+        password: String(form.get('password')),
+        fetchOptions: isOAuthFlow ? { redirect: 'manual' } : undefined,
+      });
+      error = result.error;
+    } catch {
+      // A blocked redirect can surface as a thrown network error; the
+      // account and session were created before the hook fired.
+    }
     setPending(false);
-    if (error) {
+    // status 0 is the opaque-redirect result, not a validation failure.
+    if (error && error.status !== 0) {
       setError(error.message ?? 'Sign-up failed.');
       return;
     }
-    // MCP OAuth flow: resume the authorize request that redirected here
-    // (see sign-in for why this is a top-level navigation).
-    if (searchParams.has('client_id') && searchParams.has('response_type')) {
+    if (isOAuthFlow) {
       window.location.assign(`/api/auth/mcp/authorize?${searchParams.toString()}`);
       return;
     }

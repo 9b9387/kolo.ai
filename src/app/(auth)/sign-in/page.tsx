@@ -22,26 +22,38 @@ function SignInForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const isOAuthFlow = searchParams.has('client_id') && searchParams.has('response_type');
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setPending(true);
     const form = new FormData(event.currentTarget);
-    const { error } = await authClient.signIn.email({
-      email: String(form.get('email')),
-      password: String(form.get('password')),
-    });
+    // MCP OAuth flow: the mcp plugin's after-hook rewrites this response into
+    // a 302 straight to the client's callback. Following it from a fetch
+    // context is unreliable (CORS/PNA) and strands this page on the pending
+    // state — `redirect: manual` keeps the code undelivered here (the session
+    // cookie still lands) and the top-level navigation below resumes
+    // authorize deterministically.
+    let error: { status?: number; message?: string | null } | null = null;
+    try {
+      const result = await authClient.signIn.email({
+        email: String(form.get('email')),
+        password: String(form.get('password')),
+        fetchOptions: isOAuthFlow ? { redirect: 'manual' } : undefined,
+      });
+      error = result.error;
+    } catch {
+      // A blocked redirect can still surface as a thrown network error in
+      // some browsers; the sign-in itself succeeded before the hook fired.
+    }
     setPending(false);
-    if (error) {
+    // status 0 is the opaque-redirect result, not a credential failure.
+    if (error && error.status !== 0) {
       setError(error.message ?? 'Sign-in failed.');
       return;
     }
-    // MCP OAuth flow: the mcp plugin lands here with the original authorize
-    // query attached. Resume with a top-level navigation — the session now
-    // exists, so authorize issues the code and redirects to the client's
-    // callback. (The plugin's after-hook 302 on the sign-in POST itself is
-    // fetch-internal and can be blocked by PNA/CORS for loopback callbacks.)
-    if (searchParams.has('client_id') && searchParams.has('response_type')) {
+    if (isOAuthFlow) {
       window.location.assign(`/api/auth/mcp/authorize?${searchParams.toString()}`);
       return;
     }
