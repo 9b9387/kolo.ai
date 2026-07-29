@@ -13,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'prisma/migrations-postgres/**'
+      - '.github/workflows/migrate-production.yml'
   # Manual runs for baselining or re-applying after a failed run.
   workflow_dispatch:
 
@@ -23,6 +24,12 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    # Job-level: prisma.config.ts resolves DATABASE_URL at config load, which
+    # already happens during npm ci's postinstall `prisma generate` (offline,
+    # no DB connection is made until migrate deploy).
+    env:
+      DB_PROVIDER: postgres
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,11 +38,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      # postinstall runs `prisma generate` (offline, no DB access).
       - run: npm ci
 
       - name: prisma migrate deploy
         run: npx prisma migrate deploy
-        env:
-          DB_PROVIDER: postgres
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
