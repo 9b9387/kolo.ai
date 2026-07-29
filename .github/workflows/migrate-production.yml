@@ -1,0 +1,41 @@
+# Applies Prisma migrations to the production Supabase database whenever a
+# new Postgres migration lands on main. Vercel deploys the code in parallel;
+# migrations here are additive-first, so either order is safe.
+#
+# Requires the PRODUCTION_DATABASE_URL repo secret: the Supabase *session*
+# pooler URL (port 5432, with ?sslmode=no-verify) — the transaction pooler
+# (6543) used at runtime does not support migrate's prepared statements.
+
+name: Migrate production database
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'prisma/migrations-postgres/**'
+  # Manual runs for baselining or re-applying after a failed run.
+  workflow_dispatch:
+
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall runs `prisma generate` (offline, no DB access).
+      - run: npm ci
+
+      - name: prisma migrate deploy
+        run: npx prisma migrate deploy
+        env:
+          DB_PROVIDER: postgres
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}

@@ -83,9 +83,14 @@ The production deployment runs on Vercel with Supabase Postgres:
    `DATABASE_URL` (use the Supabase **transaction pooler**, port 6543, with
    `?sslmode=no-verify` — serverless functions need pooled connections),
    `BETTER_AUTH_SECRET` (real secret), `BETTER_AUTH_URL` (the production URL).
-2. Apply migrations once per schema change, from any machine:
-   `DB_PROVIDER=postgres DATABASE_URL=<session-pooler-url> npx prisma migrate deploy`
-   (migrate uses the session pooler, port 5432).
+2. Migrations apply automatically: pushing a change under
+   `prisma/migrations-postgres/` to main triggers
+   `.github/workflows/migrate-production.yml` (`prisma migrate deploy`).
+   One-time setup: add the `PRODUCTION_DATABASE_URL` repo secret — the
+   Supabase **session pooler** URL (port 5432, `?sslmode=no-verify`); the
+   transaction pooler does not support migrate. Manual fallback from any
+   machine:
+   `DB_PROVIDER=postgres DATABASE_URL=<session-pooler-url> npx prisma migrate deploy`.
 3. `vercel deploy --prod`. The build's postinstall generates the
    Postgres-flavored Prisma client from the env vars.
 
