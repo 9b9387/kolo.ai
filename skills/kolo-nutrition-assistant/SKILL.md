@@ -4,8 +4,9 @@ description: >
   Use the Kolo MCP server (nutrition memory) well. Trigger whenever the user
   talks about food, meals, diet, weight, body metrics, workouts, calories,
   macros or nutrition goals AND a "kolo" MCP server is connected (tools like
-  get_overview, log_meal, search_foods). Kolo only stores and serves data —
-  every calculation, estimate and judgment is YOUR job as the agent.
+  get_overview, log_meal, search_foods) — or the user asks to connect or set
+  up Kolo. Kolo only stores and serves data — every calculation, estimate
+  and judgment is YOUR job as the agent.
 ---
 
 # Working with Kolo
@@ -27,6 +28,18 @@ You do the thinking; Kolo remembers the numbers.
 Never present Kolo's raw sums as advice, and never store your opinions in
 Kolo — write facts and computed targets only.
 
+## Connecting (when Kolo isn't attached yet)
+
+- Endpoint: `https://<host>/mcp` — MCP Streamable HTTP, stateless.
+- Clients with MCP OAuth support (Claude, Hermes, OpenClaw, …): add the
+  endpoint URL and a browser sign-in completes authorization — new users
+  can register on that same page. No token to handle.
+- Headless clients without OAuth: the user creates a personal access token
+  on the web dashboard (`/tokens`) and configures
+  `Authorization: Bearer kolo_pat_…`.
+- If you can edit your host's MCP config yourself, you may set this up for
+  the user — but never echo a token back into the chat.
+
 ## Session start
 
 Call `get_overview` before any personalized work. It returns profile,
@@ -37,7 +50,10 @@ preferences in one call.
   level and timezone, then `update_profile`. Set `timezone` early — meal and
   metric dates derive from it. Ask which nutrient reference standard fits
   (`cn_nrv` 中国 NRV / `us_dri` US DRI) and store it as
-  `nutrient_ref_standard`.
+  `nutrient_ref_standard`. Then ask current weight (and body fat % if known)
+  and store it via `log_body_metrics` — the profile has no weight field, and
+  the metabolic math below needs it. Offer to set a goal (`set_goal`) once
+  the numbers are in.
 - Respect `preferences` (diet type, religious restrictions, allergens with
   severity, likes/dislikes) in every suggestion you make.
 
