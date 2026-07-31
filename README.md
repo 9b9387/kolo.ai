@@ -1,5 +1,15 @@
 # Kolo
 
+[![Live demo](https://img.shields.io/badge/demo-kolo.biubiu.cool-6aa84f?logo=vercel&logoColor=white)](https://kolo.biubiu.cool)
+[![Migrate production](https://github.com/9b9387/kolo.ai/actions/workflows/migrate-production.yml/badge.svg)](https://github.com/9b9387/kolo.ai/actions/workflows/migrate-production.yml)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![Prisma 7](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io)
+[![TypeScript 5](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![MCP](https://img.shields.io/badge/MCP-Streamable_HTTP-4A154B?logo=anthropic&logoColor=white)](https://modelcontextprotocol.io)
+[![Deployed on Vercel](https://img.shields.io/badge/Vercel-deployed-000000?logo=vercel&logoColor=white)](https://vercel.com)
+[![Supabase Postgres](https://img.shields.io/badge/Supabase-Postgres-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Kolo is a headless nutrition-data backend for AI agents. It stores clean food
 nutrition data and user records, and exposes everything through an MCP
 (Model Context Protocol) server. **Kolo never analyzes or estimates** — photo
@@ -80,6 +90,43 @@ npx skills add 9b9387/kolo.ai
 ```
 
 Then connect the MCP server with a token from the Tokens page.
+
+## Self-hosting (local / on-prem, Docker)
+
+The `docker compose` stack runs the whole app — the production Next.js image
+(`Dockerfile`, standalone output) plus MySQL 8.4 — on one machine. This is the
+self-contained deployment; the `## Development` flow above is for editing code
+with `npm run dev`.
+
+```bash
+cp .env.example .env
+```
+
+Set these in `.env` (the compose file injects `DB_HOST`, `DB_PORT` and
+`DATABASE_URL` for the `mysql` service automatically — leave those out):
+
+```ini
+DB_PROVIDER=mysql
+DB_USER=kolo
+DB_PASSWORD=kolo_dev        # must match docker-compose.yml
+DB_NAME=kolo
+BETTER_AUTH_SECRET=         # openssl rand -base64 32
+BETTER_AUTH_URL=http://localhost:3000
+```
+
+Then build, start, and apply migrations (a one-off container on the compose
+network — the running `web` image does not migrate on boot):
+
+```bash
+docker compose up -d --build                       # web on :3000, mysql on :3307
+docker compose run --rm web npx prisma migrate deploy
+```
+
+The app is now at <http://localhost:3000>; the MCP endpoint is
+`http://localhost:3000/mcp`. For a real host, set `BETTER_AUTH_URL` to the
+public HTTPS URL, put a TLS-terminating reverse proxy in front (OAuth
+discovery advertises whatever `BETTER_AUTH_URL` says — it must match the URL
+clients connect to), and use a strong `DB_PASSWORD`.
 
 ## Deploying (Vercel + Supabase)
 
